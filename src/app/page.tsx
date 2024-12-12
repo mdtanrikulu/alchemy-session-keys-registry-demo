@@ -1,10 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { WalletClientSigner } from '@aa-sdk/core';
-import {
-  alchemy,
-  sepolia,
-} from '@account-kit/infra';
+import { alchemy, sepolia } from '@account-kit/infra';
 import {
   SessionKeyAccessListType,
   SessionKeyPermissionsBuilder,
@@ -60,7 +57,7 @@ export default function Home() {
     (async () => {
       setMABalance(await client.getBalance({ address: client.getAddress() }));
     })();
-  }, [client])
+  }, [client]);
 
   const connectWallet = async () => {
     try {
@@ -118,22 +115,6 @@ export default function Home() {
       });
 
       await client.waitForUserOperationTransaction({ hash });
-    } else {
-      // const result = await client.updateSessionKeyPermissions({
-      //   key: sessionKeyAddress,
-      //   permissions: new SessionKeyPermissionsBuilder()
-      //     .setNativeTokenSpendLimit({ spendLimit: 1n })
-      //     .setContractAccessControlType(
-      //       SessionKeyAccessListType.ALLOW_ALL_ACCESS
-      //     )
-      //     .setTimeRange({
-      //       validFrom: Math.round(Date.now() / 1000),
-      //       // valid for 1 hour
-      //       validUntil: Math.round(Date.now() / 1000 + 60 * 60),
-      //     })
-      //     .encode(),
-      // });
-      // console.log('update result', result);
     }
 
     const sessionKeyClient = (
@@ -147,6 +128,37 @@ export default function Home() {
 
     setSessionKeyClient(sessionKeyClient);
   };
+
+  const updatePermission = async () => {
+    if (!client || !sessionKeySigner) return;
+    const isPluginInstalled = await client
+      .getInstalledPlugins({})
+      .then((x: any) => {
+        console.log(x);
+        return x.includes(SessionKeyPlugin.meta.addresses[chain.id]);
+      });
+
+    if (!isPluginInstalled) throw 'Please first install the plugin';
+
+    const sessionKeyAddress = await sessionKeySigner.getAddress();
+    const result = await client.updateSessionKeyPermissions({
+      key: sessionKeyAddress,
+      permissions: new SessionKeyPermissionsBuilder()
+        .setNativeTokenSpendLimit({ spendLimit: 1n })
+        .setContractAccessControlType(SessionKeyAccessListType.ALLOW_ALL_ACCESS)
+        .setTimeRange({
+          validFrom: Math.round(Date.now() / 1000),
+          // valid for 1 hour
+          validUntil: Math.round(Date.now() / 1000 + 60 * 60),
+        })
+        .encode(),
+    });
+    console.log('update result', result);
+  };
+
+  const getPermissionDetails = async () => {
+    
+  }
 
   const readCount = async () => {
     if (!client) return;
@@ -236,6 +248,7 @@ export default function Home() {
           <button onClick={readCount}>Refresh Count</button>
           <div>{isLoading ? 'Waiting tx to be mined...' : ''}</div>
           <button onClick={installPlugin}>Install plugin</button>
+          <button onClick={updatePermission}>Update permission</button>
           <button onClick={commitThis}>Commit this with Signature</button>
           <button onClick={revealThis}>Reveal this with Signature</button>
           <fieldset>
@@ -243,9 +256,7 @@ export default function Home() {
             <div>
               Address: {client.getAddress({ account: client.account! })}
             </div>
-            <div>
-              Balance: {maBalance}
-            </div>
+            <div>Balance: {maBalance}</div>
           </fieldset>
           <h3>Transaction Hashes:</h3>
           <ul>
