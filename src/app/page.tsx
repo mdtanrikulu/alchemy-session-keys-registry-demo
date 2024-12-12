@@ -1,9 +1,11 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { WalletClientSigner } from '@aa-sdk/core';
-import { alchemy, AlchemySmartAccountClient, sepolia } from '@account-kit/infra';
 import {
-  IPluginAbi,
+  alchemy,
+  sepolia,
+} from '@account-kit/infra';
+import {
   SessionKeyAccessListType,
   SessionKeyPermissionsBuilder,
   SessionKeyPlugin,
@@ -18,18 +20,19 @@ import {
   abi as registryAbi,
   address as registryAddress,
 } from './RegistryContract';
-import { writeContract } from 'viem/actions';
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY as string;
 const chain = sepolia;
 
 export default function Home() {
-  const [client, setClient] = useState<AlchemySmartAccountClient | undefined>();
+  const [client, setClient] = useState<any>();
+  const [maBalance, setMABalance] = useState<number>(0);
   const [sessionKeyClient, setSessionKeyClient] = useState<any>();
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setLoading] = useState<boolean>(false);
   const [sessionKeySigner, setSessionKeySigner] = useState<SessionKeySigner>();
   const [countValue, setCountValue] = useState<number>();
+  const [txHashes, setTxHashes] = useState<string[]>([]); // State to track transaction hashes
   const transport = alchemy({ apiKey: API_KEY });
 
   const walletClient = createWalletClient({
@@ -48,10 +51,16 @@ export default function Home() {
 
       if (accounts.length > 0) {
         setIsConnected(true);
-        await initializeClient();
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!client) return;
+    (async () => {
+      setMABalance(await client.getBalance({ address: client.getAddress() }));
+    })();
+  }, [client])
 
   const connectWallet = async () => {
     try {
@@ -60,7 +69,6 @@ export default function Home() {
       });
       if (accounts.length > 0) {
         setIsConnected(true);
-        await initializeClient();
         console.log('Connected account:', accounts[0]);
       } else {
         console.log('No accounts found.');
@@ -74,7 +82,7 @@ export default function Home() {
     const sessionKeySigner = new SessionKeySigner();
     setSessionKeySigner(sessionKeySigner);
 
-    const client: any = (
+    const client = (
       await createModularAccountAlchemyClient({
         chain,
         transport,
@@ -82,17 +90,19 @@ export default function Home() {
       })
     ).extend(sessionKeyPluginActions);
     setClient(client);
+  };
 
+  const installPlugin = async () => {
+    if (!client || !sessionKeySigner) return;
     const isPluginInstalled = await client
       .getInstalledPlugins({})
       .then((x: any) => {
         console.log(x);
-        return x.includes(SessionKeyPlugin.meta.addresses[chain.id])
+        return x.includes(SessionKeyPlugin.meta.addresses[chain.id]);
       });
 
-
     const sessionKeyAddress = await sessionKeySigner.getAddress();
-    console.log("isPluginInstalled", isPluginInstalled);
+    console.log('isPluginInstalled', isPluginInstalled);
 
     if (!isPluginInstalled) {
       const initialPermissions = new SessionKeyPermissionsBuilder()
@@ -109,22 +119,21 @@ export default function Home() {
 
       await client.waitForUserOperationTransaction({ hash });
     } else {
-      const result = await client.updateSessionKeyPermissions({
-        key: sessionKeyAddress,
-        permissions: new SessionKeyPermissionsBuilder()
-          .setNativeTokenSpendLimit({ spendLimit: 1n })
-          .setContractAccessControlType(SessionKeyAccessListType.ALLOW_ALL_ACCESS)
-          .setTimeRange({
-            validFrom: Math.round(Date.now() / 1000),
-            // valid for 1 hour
-            validUntil: Math.round(Date.now() / 1000 + 60 * 60),
-          })
-          .encode(),
-      });
-      // const result = await client.removeSessionKey({
+      // const result = await client.updateSessionKeyPermissions({
       //   key: sessionKeyAddress,
+      //   permissions: new SessionKeyPermissionsBuilder()
+      //     .setNativeTokenSpendLimit({ spendLimit: 1n })
+      //     .setContractAccessControlType(
+      //       SessionKeyAccessListType.ALLOW_ALL_ACCESS
+      //     )
+      //     .setTimeRange({
+      //       validFrom: Math.round(Date.now() / 1000),
+      //       // valid for 1 hour
+      //       validUntil: Math.round(Date.now() / 1000 + 60 * 60),
+      //     })
+      //     .encode(),
       // });
-      console.log("update result", result);
+      // console.log('update result', result);
     }
 
     const sessionKeyClient = (
@@ -179,6 +188,7 @@ export default function Home() {
     });
 
     console.log(result);
+    setTxHashes((prev) => [...prev, result.hash]); // Add transaction hash to state
     setLoading(false);
     readCount();
   };
@@ -207,6 +217,7 @@ export default function Home() {
     });
 
     console.log(result);
+    setTxHashes((prev) => [...prev, result.hash]); // Add transaction hash to state
     setLoading(false);
     readCount();
   };
@@ -215,13 +226,33 @@ export default function Home() {
     <div className={styles.page}>
       {!isConnected ? (
         <button onClick={connectWallet}>Connect Wallet</button>
+      ) : !client ? (
+        <>
+          <button onClick={initializeClient}>Sign to create SCA</button>
+        </>
       ) : (
         <>
           <div>{countValue}</div>
           <button onClick={readCount}>Refresh Count</button>
           <div>{isLoading ? 'Waiting tx to be mined...' : ''}</div>
+          <button onClick={installPlugin}>Install plugin</button>
           <button onClick={commitThis}>Commit this with Signature</button>
           <button onClick={revealThis}>Reveal this with Signature</button>
+          <fieldset>
+            <legend>Modular Account:</legend>
+            <div>
+              Address: {client.getAddress({ account: client.account! })}
+            </div>
+            <div>
+              Balance: {maBalance}
+            </div>
+          </fieldset>
+          <h3>Transaction Hashes:</h3>
+          <ul>
+            {txHashes.map((hash, index) => (
+              <li key={index}>{hash}</li>
+            ))}
+          </ul>
         </>
       )}
     </div>
